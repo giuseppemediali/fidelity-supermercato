@@ -484,7 +484,7 @@ export default function FidelityApp() {
 
   function inviaTesseraEmail(cliente) {
     setMessaggioEmail({ clienteId: cliente.id, testo: "Invio in corso..." });
-    fetch(`${SUPABASE_URL}/functions/v1/invia-tessera`, {
+    fetch(`${SUPABASE_URL}/functions/v1/Invia-tessera`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
