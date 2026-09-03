@@ -538,6 +538,11 @@ export default function FidelityApp() {
     setSecondiRimasti(ATTESA_SECONDI);
     setLogListener((prev) => [{ tipo: "attesa", testo: `In attesa scontrino per ${cliente.nome}`, ora: nowLabel() }, ...prev].slice(0, 8));
 
+    // Segniamo l'istante esatto in cui parte l'attesa: verranno accettati
+    // solo scontrini ricevuti da questo momento in poi, mai quelli vecchi
+    // rimasti in sospeso da prove o clienti precedenti.
+    const inizioAttesa = new Date().toISOString();
+
     countdownRef.current = setInterval(() => {
       setSecondiRimasti((s) => (s > 0 ? s - 1 : 0));
     }, 1000);
@@ -553,7 +558,7 @@ export default function FidelityApp() {
     pollingScontriniRef.current = setInterval(async () => {
       try {
         const righe = await supaFetch(
-          "scontrini_ricevuti?abbinato=eq.false&order=ricevuto_il.desc&limit=1&select=*"
+          `scontrini_ricevuti?abbinato=eq.false&ricevuto_il=gt.${encodeURIComponent(inizioAttesa)}&order=ricevuto_il.asc&limit=1&select=*`
         );
         if (righe && righe.length > 0) {
           const scontrino = righe[0];
