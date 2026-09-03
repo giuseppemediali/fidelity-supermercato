@@ -582,45 +582,6 @@ export default function FidelityApp() {
     }, 2000);
   }
 
-  function simulaComandaInArrivo() {
-    setLogListener((prev) => [{ tipo: "scartato", testo: "Comanda ricevuta dalla stampante — nessun totale, scartata", ora: nowLabel() }, ...prev].slice(0, 8));
-  }
-
-  function simulaScontrinoInArrivo() {
-    if (!clienteInAttesa) {
-      setLogListener((prev) => [{ tipo: "scartato", testo: "Scontrino ricevuto ma nessun cliente in attesa — ignorato", ora: nowLabel() }, ...prev].slice(0, 8));
-      return;
-    }
-    const catalogo = [
-      { nome: "Pasta 500g", prezzo: 1.2 },
-      { nome: "Latte fresco 1L", prezzo: 1.5 },
-      { nome: "Pane", prezzo: 2.3 },
-      { nome: "Detersivo piatti", prezzo: 2.9 },
-      { nome: "Mele kg", prezzo: 2.1 },
-      { nome: "Caffè 250g", prezzo: 3.4 },
-      { nome: "Yogurt x4", prezzo: 2.6 },
-      { nome: "Acqua 6x1.5L", prezzo: 3.1 },
-    ];
-    const numArticoli = 2 + Math.floor(Math.random() * 4);
-    const scelti = [...catalogo].sort(() => Math.random() - 0.5).slice(0, numArticoli);
-    const importo = parseFloat(scelti.reduce((tot, a) => tot + a.prezzo, 0).toFixed(2));
-    const righeArticoli = scelti.map((a) => `${a.nome.padEnd(20, " ")} €${a.prezzo.toFixed(2)}`);
-    const testoScontrino = [
-      "SUPERMERCATO",
-      "-----------------------------",
-      ...righeArticoli,
-      "-----------------------------",
-      `TOTALE                €${importo.toFixed(2)}`,
-      `CONTANTI               €${importo.toFixed(2)}`,
-      new Date().toLocaleString("it-IT"),
-    ].join("\n");
-    const puntiGuadagnati = Math.round(importo * PUNTI_PER_EURO);
-    const cliente = clienteInAttesa;
-    registraMovimento(cliente.id, { importo, punti: puntiGuadagnati, tipo: "acquisto", scontrino: testoScontrino });
-    setLogListener((prev) => [{ tipo: "abbinato", testo: `Scontrino € ${importo.toFixed(2)} abbinato a ${cliente.nome}: +${puntiGuadagnati} pt`, ora: nowLabel() }, ...prev].slice(0, 8));
-    fermaAttesa();
-  }
-
   function nowLabel() {
     return new Date().toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   }
@@ -942,16 +903,6 @@ export default function FidelityApp() {
                     </button>
                   </div>
                 )}
-
-                <div style={styles.simulaRiga}>
-                  <span style={styles.simulaLabel}>Simula listener di rete:</span>
-                  <button type="button" style={styles.bottoneSecondario} onClick={simulaComandaInArrivo}>
-                    Simula comanda in arrivo
-                  </button>
-                  <button type="button" style={styles.bottonePrimario} onClick={simulaScontrinoInArrivo}>
-                    Simula scontrino in arrivo
-                  </button>
-                </div>
 
                 {logListener.length > 0 && (
                   <div style={styles.logBox}>
