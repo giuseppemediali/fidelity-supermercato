@@ -892,6 +892,12 @@ export default function FidelityApp() {
                   </form>
                 )}
 
+                {messaggioCassa && !clienteInAttesa && (
+                  <div style={{ ...styles.messaggio, ...(messaggioCassa.tipo === "errore" ? styles.messaggioErrore : styles.messaggioSuccesso) }}>
+                    {messaggioCassa.testo}
+                  </div>
+                )}
+
                 {clienteInAttesa && (
                   <div style={styles.attesaBox}>
                     <div style={styles.attesaNome}>{clienteInAttesa.nome}</div>
@@ -994,12 +1000,12 @@ function RigaStoricoConScontrino({ riga }) {
 
 const styles = {
   app: { fontFamily: "'Inter', system-ui, sans-serif", background: "#F7F5F0", minHeight: "100vh", color: "#1F2318" },
-  header: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 24px", borderBottom: "1px solid #E3E0D6", background: "#FFFFFF", flexWrap: "wrap", gap: 12 },
-  eyebrow: { fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "#7A8B6F", fontWeight: 600 },
-  titolo: { fontSize: 22, margin: "2px 0 0", fontWeight: 700 },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 24px", borderBottom: "1px solid #E3E0D6", background: "#1A1414", flexWrap: "wrap", gap: 12 },
+  eyebrow: { fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "#E38A8F", fontWeight: 600 },
+  titolo: { fontSize: 22, margin: "2px 0 0", fontWeight: 700, color: "#FFFFFF" },
   nav: { display: "flex", gap: 8 },
   navBtn: { display: "flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 8, border: "1px solid #E3E0D6", background: "#fff", cursor: "pointer", fontSize: 13, color: "#4A4A40" },
-  navBtnAttivo: { background: "#3D5A3B", color: "#fff", borderColor: "#3D5A3B" },
+  navBtnAttivo: { background: "#C41E2F", color: "#fff", borderColor: "#C41E2F" },
   main: { maxWidth: 640, margin: "0 auto", padding: "24px 16px" },
   h2: { fontSize: 18, fontWeight: 700, margin: "0 0 12px" },
   h3: { fontSize: 14, fontWeight: 700, margin: "20px 0 8px", color: "#5A5A4E" },
@@ -1012,24 +1018,24 @@ const styles = {
   rigaCliente: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", background: "#fff", border: "1px solid #E3E0D6", borderRadius: 10, cursor: "pointer", textAlign: "left", width: "100%" },
   nomeCliente: { fontWeight: 600, fontSize: 14 },
   codiceCliente: { fontSize: 12, color: "#8A8A7C", fontFamily: "monospace" },
-  puntiBadge: { background: "#EAF0E4", color: "#3D5A3B", fontWeight: 700, fontSize: 13, padding: "4px 10px", borderRadius: 20 },
+  puntiBadge: { background: "#FBE5E7", color: "#C41E2F", fontWeight: 700, fontSize: 13, padding: "4px 10px", borderRadius: 20 },
   vuoto: { color: "#8A8A7C", fontSize: 14 },
   cardForm: { background: "#fff", border: "1px solid #E3E0D6", borderRadius: 12, padding: 20 },
   form: { display: "flex", flexDirection: "column", gap: 14 },
   label: { display: "flex", flexDirection: "column", gap: 6, fontSize: 13, fontWeight: 600, color: "#4A4A40" },
   input: { padding: "10px 12px", borderRadius: 8, border: "1px solid #DAD6C8", fontSize: 14, fontFamily: "inherit" },
-  bottonePrimario: { display: "flex", alignItems: "center", justifyContent: "center", gap: 6, background: "#3D5A3B", color: "#fff", border: "none", padding: "12px", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", marginTop: 4 },
-  bottoneIndietro: { display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#7A8B6F", fontSize: 13, cursor: "pointer", padding: 0, marginBottom: 14 },
+  bottonePrimario: { display: "flex", alignItems: "center", justifyContent: "center", gap: 6, background: "#C41E2F", color: "#fff", border: "none", padding: "12px", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", marginTop: 4 },
+  bottoneIndietro: { display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#9A4A50", fontSize: 13, cursor: "pointer", padding: 0, marginBottom: 14 },
   schedaHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" },
   qrBox: { padding: 10, background: "#fff", border: "1px solid #E3E0D6", borderRadius: 8 },
-  puntiGrande: { fontSize: 40, fontWeight: 800, color: "#3D5A3B", margin: "16px 0" },
+  puntiGrande: { fontSize: 40, fontWeight: 800, color: "#C41E2F", margin: "16px 0" },
   puntiLabel: { fontSize: 16, fontWeight: 500, color: "#8A8A7C" },
   rigaStorico: { display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #F0EEE5", fontSize: 13, width: "100%", background: "none", border: "none", borderBottomWidth: 1, borderBottomStyle: "solid", borderBottomColor: "#F0EEE5", textAlign: "left", fontFamily: "inherit" },
-  puntiStorico: { color: "#3D5A3B", fontWeight: 600 },
+  puntiStorico: { color: "#C41E2F", fontWeight: 600 },
   hint: { fontSize: 13, color: "#8A8A7C", marginBottom: 16 },
   hintPiccolo: { fontSize: 12, color: "#B0AC9C", marginTop: 10, textAlign: "center" },
   messaggio: { marginTop: 14, padding: "10px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600 },
-  messaggioSuccesso: { background: "#EAF0E4", color: "#3D5A3B" },
+  messaggioSuccesso: { background: "#FBE5E7", color: "#C41E2F" },
   messaggioErrore: { background: "#FBEAE8", color: "#B23B2E" },
   scannerAvvio: { display: "flex", flexDirection: "column", gap: 10 },
   bottoneSecondario: { display: "flex", alignItems: "center", justifyContent: "center", gap: 6, background: "#fff", color: "#4A4A40", border: "1px solid #DAD6C8", padding: "11px", borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: "pointer" },
@@ -1037,7 +1043,7 @@ const styles = {
   video: { width: "100%", display: "block", aspectRatio: "4/3", objectFit: "cover" },
   mirino: { position: "absolute", top: "50%", left: "50%", width: "60%", aspectRatio: "1/1", transform: "translate(-50%, -50%)", border: "2px solid #FFFFFF", borderRadius: 12, boxShadow: "0 0 0 999px rgba(0,0,0,0.35)", pointerEvents: "none" },
   bottoneAnnulla: { position: "absolute", bottom: 12, left: "50%", transform: "translateX(-50%)", display: "flex", alignItems: "center", gap: 6, background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", padding: "8px 14px", borderRadius: 20, fontSize: 13, cursor: "pointer" },
-  chipRilevato: { fontSize: 12, color: "#3D5A3B", background: "#EAF0E4", padding: "6px 10px", borderRadius: 6, fontWeight: 600, marginTop: -6 },
+  chipRilevato: { fontSize: 12, color: "#C41E2F", background: "#FBE5E7", padding: "6px 10px", borderRadius: 6, fontWeight: 600, marginTop: -6 },
   puntiBadgeSconto: { background: "#F5D97A", color: "#6B4E00", fontWeight: 700, fontSize: 12, padding: "4px 10px", borderRadius: 20 },
   scontoBox: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, background: "#FFF8E6", border: "1px solid #F5D97A", borderRadius: 10, padding: "14px 16px", marginBottom: 16, flexWrap: "wrap" },
   scontoTitolo: { fontSize: 12, fontWeight: 700, color: "#6B4E00", textTransform: "uppercase", letterSpacing: "0.04em" },
@@ -1045,7 +1051,7 @@ const styles = {
   progressoBox: { marginBottom: 16 },
   progressoTesto: { fontSize: 12, color: "#8A8A7C", marginBottom: 6 },
   progressoSfondo: { height: 8, background: "#EDEAE0", borderRadius: 20, overflow: "hidden" },
-  progressoBarra: { height: "100%", background: "#3D5A3B", borderRadius: 20, transition: "width 0.3s" },
+  progressoBarra: { height: "100%", background: "#C41E2F", borderRadius: 20, transition: "width 0.3s" },
   puntiStoricoNegativo: { color: "#B23B2E", fontWeight: 600 },
   toggleModalita: { display: "flex", gap: 6, marginBottom: 16, background: "#F0EEE5", padding: 4, borderRadius: 10 },
   toggleBtn: { flex: 1, padding: "8px 10px", border: "none", background: "transparent", borderRadius: 7, fontSize: 13, fontWeight: 600, color: "#7A7A6C", cursor: "pointer" },
@@ -1059,11 +1065,11 @@ const styles = {
   logBox: { marginTop: 14, display: "flex", flexDirection: "column", gap: 6 },
   logRiga: { fontSize: 12, padding: "8px 10px", borderRadius: 6, background: "#F7F5F0" },
   logOra: { fontFamily: "monospace", color: "#B0AC9C", marginRight: 6 },
-  logAbbinato: { background: "#EAF0E4", color: "#3D5A3B" },
+  logAbbinato: { background: "#FBE5E7", color: "#C41E2F" },
   logScartato: { background: "#F0EEE5", color: "#8A8A7C" },
   logAttesa: { background: "#FFF8E6", color: "#6B4E00" },
   blocchettoStorico: { display: "flex", flexDirection: "column" },
   scontrinoTesto: { background: "#F7F5F0", border: "1px solid #E3E0D6", borderRadius: 8, padding: "12px 14px", fontSize: 11, lineHeight: 1.6, color: "#4A4A40", whiteSpace: "pre-wrap", margin: "0 0 8px", fontFamily: "monospace" },
-  bottoneEmail: { display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: "1px solid #DAD6C8", color: "#3D5A3B", fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 20, cursor: "pointer", marginTop: 8 },
-  bottoneUsaCassa: { display: "inline-flex", alignItems: "center", gap: 6, background: "#3D5A3B", border: "1px solid #3D5A3B", color: "#fff", fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 20, cursor: "pointer", marginTop: 8, marginLeft: 8 },
+  bottoneEmail: { display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: "1px solid #DAD6C8", color: "#C41E2F", fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 20, cursor: "pointer", marginTop: 8 },
+  bottoneUsaCassa: { display: "inline-flex", alignItems: "center", gap: 6, background: "#C41E2F", border: "1px solid #C41E2F", color: "#fff", fontSize: 12, fontWeight: 600, padding: "6px 12px", borderRadius: 20, cursor: "pointer", marginTop: 8, marginLeft: 8 },
 };
