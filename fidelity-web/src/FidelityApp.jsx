@@ -247,6 +247,17 @@ function generaCodiceCliente() {
   return "SM-" + Math.random().toString(36).substring(2, 8).toUpperCase();
 }
 
+// Alcuni lettori di codici a barre, per via del layout tastiera configurato,
+// leggono il trattino "-" come apostrofo o apice (' ` ’ ‘). Questa funzione
+// corregge il codice appena digitato o scansionato, così l'app riconosce
+// comunque il cliente anche se lo scanner "sbaglia" quel carattere.
+function normalizzaCodiceCliente(testo) {
+  return testo
+    .trim()
+    .toUpperCase()
+    .replace(/['`’‘]/g, "-");
+}
+
 export default function FidelityApp() {
   const [clienti, setClienti] = useState([]);
   const [caricamentoClienti, setCaricamentoClienti] = useState(true);
@@ -335,7 +346,7 @@ export default function FidelityApp() {
           const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const codice = window.jsQR(imageData.data, imageData.width, imageData.height);
           if (codice && codice.data) {
-            setCodiceCassa(codice.data.trim().toUpperCase());
+            setCodiceCassa(normalizzaCodiceCliente(codice.data));
             fermaScanner();
             return;
           }
@@ -458,7 +469,7 @@ export default function FidelityApp() {
     e.preventDefault();
     const importo = parseFloat(importoCassa);
     if (!importo || importo <= 0) return;
-    const cliente = clienti.find((c) => c.id === codiceCassa.trim().toUpperCase());
+    const cliente = clienti.find((c) => c.id === normalizzaCodiceCliente(codiceCassa));
     if (!cliente) {
       setMessaggioCassa({ tipo: "errore", testo: "Codice cliente non trovato." });
       return;
@@ -528,7 +539,7 @@ export default function FidelityApp() {
   }
 
   function avviaAttesa(codice) {
-    const cliente = clienti.find((c) => c.id === codice.trim().toUpperCase());
+    const cliente = clienti.find((c) => c.id === normalizzaCodiceCliente(codice));
     if (!cliente) {
       setMessaggioCassa({ tipo: "errore", testo: "Codice cliente non trovato." });
       return;
@@ -830,7 +841,7 @@ export default function FidelityApp() {
                       <input
                         style={styles.input}
                         value={codiceCassa}
-                        onChange={(e) => setCodiceCassa(e.target.value)}
+                        onChange={(e) => setCodiceCassa(normalizzaCodiceCliente(e.target.value))}
                         onKeyDown={gestisciInvioCodice}
                         placeholder="Es. SM-A1B2C3 (o scansiona col lettore)"
                         autoFocus={inputManuale}
@@ -886,7 +897,7 @@ export default function FidelityApp() {
                       <input
                         style={styles.input}
                         value={codiceCassa}
-                        onChange={(e) => setCodiceCassa(e.target.value)}
+                        onChange={(e) => setCodiceCassa(normalizzaCodiceCliente(e.target.value))}
                         placeholder="Es. SM-A1B2C3 (scansiona QR o barcode)"
                         autoFocus
                       />
