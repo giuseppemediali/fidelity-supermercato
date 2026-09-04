@@ -583,6 +583,19 @@ export default function FidelityApp() {
             scontrino: scontrino.testo,
           });
           setLogListener((prev) => [{ tipo: "abbinato", testo: `Scontrino € ${importo.toFixed(2)} abbinato a ${cliente.nome}: +${puntiGuadagnati} pt`, ora: nowLabel() }, ...prev].slice(0, 8));
+          // Chiede al listener sul PC di cassa di stampare un secondo
+          // scontrino di cortesia con il riepilogo punti del cliente.
+          const puntiTotaliCliente = cliente.punti + puntiGuadagnati;
+          supaFetch("richieste_stampa", {
+            method: "POST",
+            body: JSON.stringify({
+              cliente_nome: cliente.nome,
+              punti_totali: puntiTotaliCliente,
+              punti_mancanti: Math.max(0, SOGLIA_SCONTO - puntiTotaliCliente),
+              sconto_disponibile: puntiTotaliCliente >= SOGLIA_SCONTO,
+            }),
+            prefer: "return=minimal",
+          }).catch(() => {});
           // Segna lo scontrino come abbinato, cosi' non venga riusato
           supaFetch(`scontrini_ricevuti?id=eq.${scontrino.id}`, {
             method: "PATCH",
