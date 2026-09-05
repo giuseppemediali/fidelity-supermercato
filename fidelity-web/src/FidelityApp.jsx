@@ -439,6 +439,9 @@ export default function FidelityApp() {
     supaFetch("clienti", { method: "POST", body: JSON.stringify(nuovo) }).catch((err) => {
       setErroreCaricamento(`Cliente salvato solo localmente: ${err.message}`);
     });
+    if (nuovo.email) {
+      inviaTesseraEmail(nuovo);
+    }
   }
 
   function registraMovimento(clienteId, { importo, punti, tipo = "acquisto", scontrino = null }) {
