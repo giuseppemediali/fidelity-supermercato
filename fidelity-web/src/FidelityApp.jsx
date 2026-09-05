@@ -752,7 +752,22 @@ export default function FidelityApp() {
                     setVista("cassa");
                   }}
                 >
-                  <ScanLine size={14} /> Usa tessera in cassa
+                  <ScanLine size={14} /> Invio tessera alla cassa manuale
+                </button>
+                <button
+                  type="button"
+                  style={styles.bottoneUsaCassa}
+                  onClick={() => {
+                    setModalitaCassa("automatica");
+                    fermaScanner();
+                    setInputManuale(false);
+                    setCodiceCassa("");
+                    setMessaggioCassa(null);
+                    setVista("cassa");
+                    avviaAttesa(clienteSelezionato.id);
+                  }}
+                >
+                  <ScanLine size={14} /> Invio tessera alla cassa automatica
                 </button>
               </div>
               <div style={styles.qrBox}>
