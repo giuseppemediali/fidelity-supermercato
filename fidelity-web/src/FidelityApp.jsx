@@ -282,7 +282,7 @@ export default function FidelityApp() {
   const [ricercaCliente, setRicercaCliente] = useState("");
   const [messaggioEmail, setMessaggioEmail] = useState(null);
 
-  const attesaTimerRef = useRef(null);
+  const attesaIdRef = useRef(null);
   const countdownRef = useRef(null);
   const pollingScontriniRef = useRef(null);
 
@@ -414,7 +414,6 @@ export default function FidelityApp() {
 
   useEffect(() => {
     return () => {
-      clearTimeout(attesaTimerRef.current);
       clearInterval(countdownRef.current);
       clearInterval(pollingScontriniRef.current);
     };
@@ -528,91 +527,131 @@ export default function FidelityApp() {
     }
   }
 
-  // --- Modalità automatica: abbinamento per sequenza temporale -------------
-  // Simula il servizio di rete che intercetta i dati dalla stampante non
-  // fiscale (Milestone). In produzione questa logica gira su un piccolo
-  // servizio sempre acceso (es. Raspberry Pi), non nel browser.
+  // --- Modalità automatica: attesa persistita su Supabase -----------------
+  // L'abbinamento vero e proprio (trovare il cliente in attesa e accreditare
+  // i punti) ora lo fa il listener Python sul PC di cassa, sempre acceso.
+  // Questa parte del sito si limita a creare la richiesta di attesa e a
+  // osservarne l'esito: se la pagina viene ricaricata o chiusa, l'attesa
+  // resta valida lo stesso, perche' vive su Supabase e non nella memoria
+  // del browser.
 
-  function fermaAttesa() {
-    clearTimeout(attesaTimerRef.current);
+  function fermaAttesaLocale() {
+    // Ferma solo i timer/polling locali, senza toccare l'attesa su Supabase:
+    // usato quando si lascia semplicemente la schermata, non quando si
+    // vuole davvero annullare l'attesa in corso.
     clearInterval(countdownRef.current);
     clearInterval(pollingScontriniRef.current);
     setClienteInAttesa(null);
     setSecondiRimasti(0);
   }
 
-  function avviaAttesa(codice) {
-    const cliente = clienti.find((c) => c.id === normalizzaCodiceCliente(codice));
-    if (!cliente) {
-      setMessaggioCassa({ tipo: "errore", testo: "Codice cliente non trovato." });
-      return;
+  function annullaAttesa() {
+    const idDaAnnullare = attesaIdRef.current;
+    fermaAttesaLocale();
+    attesaIdRef.current = null;
+    localStorage.removeItem("fidelity_attesa_id");
+    if (idDaAnnullare) {
+      supaFetch(`attese_cassa?id=eq.${idDaAnnullare}`, {
+        method: "PATCH",
+        body: JSON.stringify({ attiva: false, esito: "annullata" }),
+        prefer: "return=minimal",
+      }).catch(() => {});
     }
-    fermaAttesa();
-    setClienteInAttesa(cliente);
-    setSecondiRimasti(ATTESA_SECONDI);
-    setLogListener((prev) => [{ tipo: "attesa", testo: `In attesa scontrino per ${cliente.nome}`, ora: nowLabel() }, ...prev].slice(0, 8));
+  }
 
-    // Segniamo l'istante esatto in cui parte l'attesa: verranno accettati
-    // solo scontrini ricevuti da questo momento in poi, mai quelli vecchi
-    // rimasti in sospeso da prove o clienti precedenti.
-    const inizioAttesa = new Date().toISOString();
+  function avviaPollingAttesa(attesaId, cliente, secondiIniziali = ATTESA_SECONDI) {
+    attesaIdRef.current = attesaId;
+    setClienteInAttesa(cliente);
+    setSecondiRimasti(secondiIniziali);
 
     countdownRef.current = setInterval(() => {
       setSecondiRimasti((s) => (s > 0 ? s - 1 : 0));
     }, 1000);
 
-    attesaTimerRef.current = setTimeout(() => {
-      setLogListener((prev) => [{ tipo: "scaduto", testo: `Attesa scaduta per ${cliente.nome} — nessun abbinamento`, ora: nowLabel() }, ...prev].slice(0, 8));
-      fermaAttesa();
-    }, ATTESA_SECONDI * 1000);
-
-    // Controlla ogni 2 secondi se il listener di rete ha mandato un vero
-    // scontrino non ancora abbinato — questo collega il programma sul PC
-    // di cassa a questa schermata, senza bisogno di azioni manuali.
+    // Controlla ogni 2 secondi se il listener sul PC di cassa ha gia'
+    // abbinato (o fatto scadere) questa attesa.
     pollingScontriniRef.current = setInterval(async () => {
       try {
-        const righe = await supaFetch(
-          `scontrini_ricevuti?abbinato=eq.false&ricevuto_il=gt.${encodeURIComponent(inizioAttesa)}&order=ricevuto_il.asc&limit=1&select=*`
-        );
-        if (righe && righe.length > 0) {
-          const scontrino = righe[0];
-          clearInterval(pollingScontriniRef.current);
-          const importo = Number(scontrino.importo) || 0;
-          const puntiGuadagnati = Math.round(importo * PUNTI_PER_EURO);
-          registraMovimento(cliente.id, {
-            importo,
-            punti: puntiGuadagnati,
-            tipo: "acquisto",
-            scontrino: scontrino.testo,
-          });
-          setLogListener((prev) => [{ tipo: "abbinato", testo: `Scontrino € ${importo.toFixed(2)} abbinato a ${cliente.nome}: +${puntiGuadagnati} pt`, ora: nowLabel() }, ...prev].slice(0, 8));
-          // Chiede al listener sul PC di cassa di stampare un secondo
-          // scontrino di cortesia con il riepilogo punti del cliente.
-          const puntiTotaliCliente = cliente.punti + puntiGuadagnati;
-          supaFetch("richieste_stampa", {
-            method: "POST",
-            body: JSON.stringify({
-              cliente_nome: cliente.nome,
-              punti_totali: puntiTotaliCliente,
-              punti_mancanti: Math.max(0, SOGLIA_SCONTO - puntiTotaliCliente),
-              sconto_disponibile: puntiTotaliCliente >= SOGLIA_SCONTO,
-            }),
-            prefer: "return=minimal",
-          }).catch(() => {});
-          // Segna lo scontrino come abbinato, cosi' non venga riusato
-          supaFetch(`scontrini_ricevuti?id=eq.${scontrino.id}`, {
-            method: "PATCH",
-            body: JSON.stringify({ abbinato: true }),
-            prefer: "return=minimal",
-          }).catch(() => {});
-          fermaAttesa();
+        const righe = await supaFetch(`attese_cassa?id=eq.${attesaId}&select=*`);
+        const attesa = righe && righe[0];
+        if (!attesa || attesa.attiva) return; // ancora in corso
+
+        clearInterval(pollingScontriniRef.current);
+        clearInterval(countdownRef.current);
+        attesaIdRef.current = null;
+        localStorage.removeItem("fidelity_attesa_id");
+
+        if (attesa.esito === "abbinato") {
+          const importo = Number(attesa.importo_abbinato) || 0;
+          const punti = Number(attesa.punti_guadagnati) || 0;
+          setClienti((prev) => prev.map((c) => (c.id === cliente.id ? { ...c, punti: c.punti + punti } : c)));
+          setLogListener((prev) => [{ tipo: "abbinato", testo: `Scontrino € ${importo.toFixed(2)} abbinato a ${cliente.nome}: +${punti} pt`, ora: nowLabel() }, ...prev].slice(0, 8));
+        } else {
+          setLogListener((prev) => [{ tipo: "scaduto", testo: `Attesa scaduta per ${cliente.nome} — nessun abbinamento`, ora: nowLabel() }, ...prev].slice(0, 8));
         }
+        setClienteInAttesa(null);
+        setSecondiRimasti(0);
       } catch (err) {
         // Errore di rete/connessione: non blocchiamo l'attesa, riproviamo
-        // al prossimo giro
+        // al prossimo giro.
       }
     }, 2000);
   }
+
+  async function avviaAttesa(codice) {
+    const cliente = clienti.find((c) => c.id === normalizzaCodiceCliente(codice));
+    if (!cliente) {
+      setMessaggioCassa({ tipo: "errore", testo: "Codice cliente non trovato." });
+      return;
+    }
+    fermaAttesaLocale();
+    setLogListener((prev) => [{ tipo: "attesa", testo: `In attesa scontrino per ${cliente.nome}`, ora: nowLabel() }, ...prev].slice(0, 8));
+
+    try {
+      const righe = await supaFetch("attese_cassa", {
+        method: "POST",
+        body: JSON.stringify({ cliente_id: cliente.id, cliente_nome: cliente.nome }),
+      });
+      const attesa = righe && righe[0];
+      if (!attesa) throw new Error("creazione dell'attesa non riuscita");
+      localStorage.setItem("fidelity_attesa_id", String(attesa.id));
+      avviaPollingAttesa(attesa.id, cliente);
+    } catch (err) {
+      setMessaggioCassa({ tipo: "errore", testo: `Impossibile avviare l'attesa: ${err.message}` });
+    }
+  }
+
+  // Ripristina un'attesa lasciata in corso (es. dopo un refresh della
+  // pagina, o tornando sulla schermata cassa dopo essere passati altrove),
+  // cosi' l'operatore non perde di vista un cliente ancora in attesa.
+  useEffect(() => {
+    if (vista !== "cassa" || modalitaCassa !== "automatica") return;
+    if (caricamentoClienti) return;
+    if (clienteInAttesa || attesaIdRef.current) return;
+    const idSalvato = localStorage.getItem("fidelity_attesa_id");
+    if (!idSalvato) return;
+
+    let attivo = true;
+    supaFetch(`attese_cassa?id=eq.${idSalvato}&select=*`)
+      .then((righe) => {
+        if (!attivo) return;
+        const attesa = righe && righe[0];
+        if (!attesa || !attesa.attiva) {
+          localStorage.removeItem("fidelity_attesa_id");
+          return;
+        }
+        const iniziata = new Date(attesa.iniziata_il).getTime();
+        const trascorsi = Math.floor((Date.now() - iniziata) / 1000);
+        const rimasti = Math.max(0, ATTESA_SECONDI - trascorsi);
+        const cliente = clienti.find((c) => c.id === attesa.cliente_id) || { id: attesa.cliente_id, nome: attesa.cliente_nome, punti: 0 };
+        avviaPollingAttesa(attesa.id, cliente, rimasti);
+      })
+      .catch(() => {});
+    return () => {
+      attivo = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vista, modalitaCassa, caricamentoClienti, clienti]);
 
   function nowLabel() {
     return new Date().toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -826,7 +865,7 @@ export default function FidelityApp() {
               <button
                 type="button"
                 style={{ ...styles.toggleBtn, ...(modalitaCassa === "manuale" ? styles.toggleBtnAttivo : {}) }}
-                onClick={() => { setModalitaCassa("manuale"); fermaAttesa(); }}
+                onClick={() => { setModalitaCassa("manuale"); fermaAttesaLocale(); }}
               >
                 Manuale
               </button>
@@ -952,7 +991,7 @@ export default function FidelityApp() {
                     <div style={styles.attesaCountdown}>
                       In attesa scontrino — {Math.floor(secondiRimasti / 60)}:{String(secondiRimasti % 60).padStart(2, "0")}
                     </div>
-                    <button type="button" style={styles.bottoneAnnullaAttesa} onClick={fermaAttesa}>
+                    <button type="button" style={styles.bottoneAnnullaAttesa} onClick={annullaAttesa}>
                       <X size={14} /> Annulla attesa
                     </button>
                   </div>
