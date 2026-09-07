@@ -687,6 +687,7 @@ export default function FidelityApp() {
                   <div>
                     <div style={styles.nomeCliente}>{c.nome}</div>
                     <div style={styles.codiceCliente}>{c.id}</div>
+                    {c.telefono && <div style={styles.telefonoCliente}>{c.telefono}</div>}
                   </div>
                   <div style={c.punti >= SOGLIA_SCONTO ? styles.puntiBadgeSconto : styles.puntiBadge}>
                     {c.punti >= SOGLIA_SCONTO ? `Sconto pronto` : `${c.punti} pt`}
@@ -1065,6 +1066,7 @@ const styles = {
   rigaCliente: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", background: "#fff", border: "1px solid #E3E0D6", borderRadius: 10, cursor: "pointer", textAlign: "left", width: "100%" },
   nomeCliente: { fontWeight: 600, fontSize: 14 },
   codiceCliente: { fontSize: 12, color: "#8A8A7C", fontFamily: "monospace" },
+  telefonoCliente: { fontSize: 12, color: "#8A8A7C", marginTop: 2 },
   puntiBadge: { background: "#FBE5E7", color: "#C41E2F", fontWeight: 700, fontSize: 13, padding: "4px 10px", borderRadius: 20 },
   vuoto: { color: "#8A8A7C", fontSize: 14 },
   cardForm: { background: "#fff", border: "1px solid #E3E0D6", borderRadius: 12, padding: 20 },
