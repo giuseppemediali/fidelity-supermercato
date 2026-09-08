@@ -455,9 +455,13 @@ export default function FidelityApp() {
         ...prev,
       ]);
     }
-    supaFetch(`clienti?id=eq.${encodeURIComponent(clienteId)}`, {
-      method: "PATCH",
-      body: JSON.stringify({ punti: (clienti.find((c) => c.id === clienteId)?.punti || 0) + punti }),
+    // L'incremento (o decremento, per il riscatto sconto) dei punti avviene
+    // in un'unica operazione atomica sul database (funzione accredita_punti),
+    // invece di leggere il totale, calcolarlo qui e riscriverlo: cosi' due
+    // acquisti ravvicinati sullo stesso cliente non si sovrascrivono a vicenda.
+    supaFetch("rpc/accredita_punti", {
+      method: "POST",
+      body: JSON.stringify({ p_cliente_id: clienteId, p_punti: punti }),
       prefer: "return=minimal",
     }).catch((err) => setErroreCaricamento(`Aggiornamento punti non salvato: ${err.message}`));
     supaFetch("movimenti", {
