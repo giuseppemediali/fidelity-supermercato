@@ -258,6 +258,34 @@ function normalizzaCodiceCliente(testo) {
     .replace(/['`’‘]/g, "-");
 }
 
+// Su alcuni browser mobili (Safari in modalita' privata, webview con
+// restrizioni sui cookie/storage, ecc.) l'accesso a localStorage puo'
+// lanciare un errore invece di limitarsi a non funzionare. Senza queste
+// protezioni, un errore del genere blocca l'intera app React e la pagina
+// resta bianca. Con queste funzioni, se lo storage non e' disponibile
+// l'app continua a funzionare normalmente — semplicemente non "ricorda"
+// un'attesa in corso dopo un ricaricamento della pagina su quel dispositivo.
+function storageLeggi(chiave) {
+  try {
+    return localStorage.getItem(chiave);
+  } catch (e) {
+    return null;
+  }
+}
+function storageScrivi(chiave, valore) {
+  try {
+    localStorage.setItem(chiave, valore);
+  } catch (e) {
+    // Storage non disponibile: l'app funziona comunque, solo senza
+    // ripristino automatico dell'attesa dopo un refresh su questo dispositivo.
+  }
+}
+function storageRimuovi(chiave) {
+  try {
+    localStorage.removeItem(chiave);
+  } catch (e) {}
+}
+
 export default function FidelityApp() {
   const [clienti, setClienti] = useState([]);
   const [caricamentoClienti, setCaricamentoClienti] = useState(true);
@@ -553,7 +581,7 @@ export default function FidelityApp() {
     const idDaAnnullare = attesaIdRef.current;
     fermaAttesaLocale();
     attesaIdRef.current = null;
-    localStorage.removeItem("fidelity_attesa_id");
+    storageRimuovi("fidelity_attesa_id");
     if (idDaAnnullare) {
       supaFetch(`attese_cassa?id=eq.${idDaAnnullare}`, {
         method: "PATCH",
@@ -583,7 +611,7 @@ export default function FidelityApp() {
         clearInterval(pollingScontriniRef.current);
         clearInterval(countdownRef.current);
         attesaIdRef.current = null;
-        localStorage.removeItem("fidelity_attesa_id");
+        storageRimuovi("fidelity_attesa_id");
 
         if (attesa.esito === "abbinato") {
           const importo = Number(attesa.importo_abbinato) || 0;
@@ -618,7 +646,7 @@ export default function FidelityApp() {
       });
       const attesa = righe && righe[0];
       if (!attesa) throw new Error("creazione dell'attesa non riuscita");
-      localStorage.setItem("fidelity_attesa_id", String(attesa.id));
+      storageScrivi("fidelity_attesa_id", String(attesa.id));
       avviaPollingAttesa(attesa.id, cliente);
     } catch (err) {
       setMessaggioCassa({ tipo: "errore", testo: `Impossibile avviare l'attesa: ${err.message}` });
@@ -632,7 +660,7 @@ export default function FidelityApp() {
     if (vista !== "cassa" || modalitaCassa !== "automatica") return;
     if (caricamentoClienti) return;
     if (clienteInAttesa || attesaIdRef.current) return;
-    const idSalvato = localStorage.getItem("fidelity_attesa_id");
+    const idSalvato = storageLeggi("fidelity_attesa_id");
     if (!idSalvato) return;
 
     let attivo = true;
@@ -641,7 +669,7 @@ export default function FidelityApp() {
         if (!attivo) return;
         const attesa = righe && righe[0];
         if (!attesa || !attesa.attiva) {
-          localStorage.removeItem("fidelity_attesa_id");
+          storageRimuovi("fidelity_attesa_id");
           return;
         }
         const iniziata = new Date(attesa.iniziata_il).getTime();
