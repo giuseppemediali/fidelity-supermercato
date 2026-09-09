@@ -7,6 +7,24 @@ import { UserPlus, ScanLine, Gift, LayoutDashboard, Plus, ArrowLeft, Camera, X, 
 const SUPABASE_URL = "https://foddafipvzsnrkolojex.supabase.co";
 const SUPABASE_KEY = "sb_publishable_c-iXQLMKFyi3IkFiutB-6Q_lnDUMbq4";
 
+// Server locale: quando il sito gira sul PC di cassa e la "modalita' cassa
+// locale" e' attiva, l'attesa e l'abbinamento avvengono interamente sul
+// PC stesso (nessuna rete coinvolta, quindi istantanei), parlando con il
+// programma listener_scontrini_v2.py che gira sempre in background li'.
+const SERVER_LOCALE_URL = "http://localhost:8787";
+
+async function localeFetch(path, options = {}) {
+  const res = await fetch(`${SERVER_LOCALE_URL}${path}`, {
+    ...options,
+    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+  });
+  if (!res.ok) {
+    const testo = await res.text().catch(() => "");
+    throw new Error(`Errore server locale (${res.status}): ${testo || res.statusText}`);
+  }
+  return res.json();
+}
+
 async function supaFetch(path, options = {}) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     ...options,
@@ -309,6 +327,8 @@ export default function FidelityApp() {
   const [logListener, setLogListener] = useState([]);
   const [ricercaCliente, setRicercaCliente] = useState("");
   const [messaggioEmail, setMessaggioEmail] = useState(null);
+  const [modalitaLocale, setModalitaLocale] = useState(false);
+  const [puntiDaTogliere, setPuntiDaTogliere] = useState("");
 
   const attesaIdRef = useRef(null);
   const countdownRef = useRef(null);
@@ -441,6 +461,10 @@ export default function FidelityApp() {
   }, []);
 
   useEffect(() => {
+    setModalitaLocale(storageLeggi("fidelity_modalita_locale") === "1");
+  }, []);
+
+  useEffect(() => {
     return () => {
       clearInterval(countdownRef.current);
       clearInterval(pollingScontriniRef.current);
@@ -568,9 +592,9 @@ export default function FidelityApp() {
   // del browser.
 
   function fermaAttesaLocale() {
-    // Ferma solo i timer/polling locali, senza toccare l'attesa su Supabase:
-    // usato quando si lascia semplicemente la schermata, non quando si
-    // vuole davvero annullare l'attesa in corso.
+    // Ferma solo i timer/polling locali (nel senso di "lato browser"), senza
+    // toccare l'attesa sul server: usato quando si lascia semplicemente la
+    // schermata, non quando si vuole davvero annullare l'attesa in corso.
     clearInterval(countdownRef.current);
     clearInterval(pollingScontriniRef.current);
     setClienteInAttesa(null);
@@ -578,6 +602,11 @@ export default function FidelityApp() {
   }
 
   function annullaAttesa() {
+    if (modalitaLocale) {
+      fermaAttesaLocale();
+      localeFetch("/annulla", { method: "POST" }).catch(() => {});
+      return;
+    }
     const idDaAnnullare = attesaIdRef.current;
     fermaAttesaLocale();
     attesaIdRef.current = null;
@@ -591,6 +620,47 @@ export default function FidelityApp() {
     }
   }
 
+  // Esito comune (locale o remoto): aggiorna punti in UI e log del cliente.
+  function gestisciEsitoAttesa(attesa, cliente) {
+    if (attesa.esito === "abbinato") {
+      const importo = Number(attesa.importo_abbinato) || 0;
+      const punti = Number(attesa.punti_guadagnati) || 0;
+      setClienti((prev) => prev.map((c) => (c.id === cliente.id ? { ...c, punti: c.punti + punti } : c)));
+      setLogListener((prev) => [{ tipo: "abbinato", testo: `Scontrino € ${importo.toFixed(2)} abbinato a ${cliente.nome}: +${punti} pt`, ora: nowLabel() }, ...prev].slice(0, 8));
+    } else {
+      const messaggio = attesa.esito === "annullata" ? `Attesa annullata per ${cliente.nome}` : `Attesa scaduta per ${cliente.nome} — nessun abbinamento`;
+      setLogListener((prev) => [{ tipo: "scaduto", testo: messaggio, ora: nowLabel() }, ...prev].slice(0, 8));
+    }
+    setClienteInAttesa(null);
+    setSecondiRimasti(0);
+  }
+
+  function avviaPollingAttesaLocale(cliente, secondiIniziali = ATTESA_SECONDI) {
+    setClienteInAttesa(cliente);
+    setSecondiRimasti(secondiIniziali);
+
+    countdownRef.current = setInterval(() => {
+      setSecondiRimasti((s) => (s > 0 ? s - 1 : 0));
+    }, 1000);
+
+    // Il server locale gira sullo stesso PC (localhost): possiamo permetterci
+    // un polling molto piu' frequente, e' comunque a costo zero di rete.
+    pollingScontriniRef.current = setInterval(async () => {
+      try {
+        const dati = await localeFetch("/stato");
+        const attesa = dati && dati.attesa;
+        if (!attesa || attesa.attiva) return;
+
+        clearInterval(pollingScontriniRef.current);
+        clearInterval(countdownRef.current);
+        gestisciEsitoAttesa(attesa, cliente);
+      } catch (err) {
+        // Server locale momentaneamente non raggiungibile: riproviamo al
+        // prossimo giro, senza interrompere l'attesa.
+      }
+    }, 400);
+  }
+
   function avviaPollingAttesa(attesaId, cliente, secondiIniziali = ATTESA_SECONDI) {
     attesaIdRef.current = attesaId;
     setClienteInAttesa(cliente);
@@ -600,8 +670,8 @@ export default function FidelityApp() {
       setSecondiRimasti((s) => (s > 0 ? s - 1 : 0));
     }, 1000);
 
-    // Controlla ogni 2 secondi se il listener sul PC di cassa ha gia'
-    // abbinato (o fatto scadere) questa attesa.
+    // Controlla se il listener sul PC di cassa ha gia' abbinato (o fatto
+    // scadere) questa attesa.
     pollingScontriniRef.current = setInterval(async () => {
       try {
         const righe = await supaFetch(`attese_cassa?id=eq.${attesaId}&select=*`);
@@ -612,17 +682,7 @@ export default function FidelityApp() {
         clearInterval(countdownRef.current);
         attesaIdRef.current = null;
         storageRimuovi("fidelity_attesa_id");
-
-        if (attesa.esito === "abbinato") {
-          const importo = Number(attesa.importo_abbinato) || 0;
-          const punti = Number(attesa.punti_guadagnati) || 0;
-          setClienti((prev) => prev.map((c) => (c.id === cliente.id ? { ...c, punti: c.punti + punti } : c)));
-          setLogListener((prev) => [{ tipo: "abbinato", testo: `Scontrino € ${importo.toFixed(2)} abbinato a ${cliente.nome}: +${punti} pt`, ora: nowLabel() }, ...prev].slice(0, 8));
-        } else {
-          setLogListener((prev) => [{ tipo: "scaduto", testo: `Attesa scaduta per ${cliente.nome} — nessun abbinamento`, ora: nowLabel() }, ...prev].slice(0, 8));
-        }
-        setClienteInAttesa(null);
-        setSecondiRimasti(0);
+        gestisciEsitoAttesa(attesa, cliente);
       } catch (err) {
         // Errore di rete/connessione: non blocchiamo l'attesa, riproviamo
         // al prossimo giro.
@@ -638,6 +698,19 @@ export default function FidelityApp() {
     }
     fermaAttesaLocale();
     setLogListener((prev) => [{ tipo: "attesa", testo: `In attesa scontrino per ${cliente.nome}`, ora: nowLabel() }, ...prev].slice(0, 8));
+
+    if (modalitaLocale) {
+      try {
+        await localeFetch("/attesa", {
+          method: "POST",
+          body: JSON.stringify({ cliente_id: cliente.id, cliente_nome: cliente.nome }),
+        });
+        avviaPollingAttesaLocale(cliente);
+      } catch (err) {
+        setMessaggioCassa({ tipo: "errore", testo: `Programma cassa locale non raggiungibile: ${err.message}` });
+      }
+      return;
+    }
 
     try {
       const righe = await supaFetch("attese_cassa", {
@@ -655,11 +728,32 @@ export default function FidelityApp() {
 
   // Ripristina un'attesa lasciata in corso (es. dopo un refresh della
   // pagina, o tornando sulla schermata cassa dopo essere passati altrove),
-  // cosi' l'operatore non perde di vista un cliente ancora in attesa.
+  // cosi' l'operatore non perde di vista un cliente ancora in attesa. In
+  // modalita' locale lo stato vive nel programma sul PC (sopravvive anche a
+  // un ricaricamento totale del browser); altrimenti vive su Supabase.
   useEffect(() => {
     if (vista !== "cassa" || modalitaCassa !== "automatica") return;
-    if (caricamentoClienti) return;
-    if (clienteInAttesa || attesaIdRef.current) return;
+    if (clienteInAttesa) return;
+
+    if (modalitaLocale) {
+      let attivo = true;
+      localeFetch("/stato")
+        .then((dati) => {
+          if (!attivo) return;
+          const attesa = dati && dati.attesa;
+          if (!attesa || !attesa.attiva) return;
+          const trascorsi = Math.floor((Date.now() - new Date(attesa.iniziata_il).getTime()) / 1000);
+          const rimasti = Math.max(0, ATTESA_SECONDI - trascorsi);
+          const cliente = clienti.find((c) => c.id === attesa.cliente_id) || { id: attesa.cliente_id, nome: attesa.cliente_nome, punti: 0 };
+          avviaPollingAttesaLocale(cliente, rimasti);
+        })
+        .catch(() => {});
+      return () => {
+        attivo = false;
+      };
+    }
+
+    if (caricamentoClienti || attesaIdRef.current) return;
     const idSalvato = storageLeggi("fidelity_attesa_id");
     if (!idSalvato) return;
 
@@ -683,7 +777,14 @@ export default function FidelityApp() {
       attivo = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vista, modalitaCassa, caricamentoClienti, clienti]);
+  }, [vista, modalitaCassa, modalitaLocale, caricamentoClienti, clienti]);
+
+  function togliPunti(cliente) {
+    const punti = parseInt(puntiDaTogliere, 10);
+    if (!cliente || !punti || punti <= 0) return;
+    registraMovimento(cliente.id, { importo: 0, punti: -punti, tipo: "correzione" });
+    setPuntiDaTogliere("");
+  }
 
   function nowLabel() {
     return new Date().toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -877,6 +978,20 @@ export default function FidelityApp() {
               </div>
             )}
 
+            <div style={styles.correzioneBox}>
+              <input
+                style={styles.inputCorrezione}
+                type="number"
+                min="1"
+                value={puntiDaTogliere}
+                onChange={(e) => setPuntiDaTogliere(e.target.value)}
+                placeholder="Punti da togliere"
+              />
+              <button type="button" style={styles.bottoneCorrezione} onClick={() => togliPunti(clienteSelezionato)}>
+                Togli punti
+              </button>
+            </div>
+
             <h3 style={styles.h3}>Storico acquisti</h3>
             {caricamentoStorico && <p style={styles.vuoto}><Loader2 size={14} className="animate-spin" style={{ verticalAlign: "-2px", marginRight: 6 }} />Caricamento storico...</p>}
             {!caricamentoStorico && storicoSelezionato.length === 0 && <p style={styles.vuoto}>Nessun acquisto registrato.</p>}
@@ -989,6 +1104,20 @@ export default function FidelityApp() {
                   del primo scontrino valido dalla stampante non fiscale (le comande vengono ignorate) per
                   al massimo {Math.floor(ATTESA_SECONDI / 60)} minuti.
                 </p>
+
+                <label style={styles.toggleLocaleLabel}>
+                  <input
+                    type="checkbox"
+                    checked={modalitaLocale}
+                    onChange={(e) => {
+                      const attiva = e.target.checked;
+                      fermaAttesaLocale();
+                      setModalitaLocale(attiva);
+                      storageScrivi("fidelity_modalita_locale", attiva ? "1" : "0");
+                    }}
+                  />
+                  Cassa in modalità locale (usa il programma su questo PC — più veloce e affidabile)
+                </label>
 
                 {!clienteInAttesa && (
                   <form
@@ -1176,6 +1305,10 @@ const styles = {
   toggleModalita: { display: "flex", gap: 6, marginBottom: 16, background: "#F0EEE5", padding: 4, borderRadius: 10 },
   toggleBtn: { flex: 1, padding: "8px 10px", border: "none", background: "transparent", borderRadius: 7, fontSize: 13, fontWeight: 600, color: "#7A7A6C", cursor: "pointer" },
   toggleBtnAttivo: { background: "#fff", color: "#1F2318", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" },
+  toggleLocaleLabel: { display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#7A7A6C", marginBottom: 16, cursor: "pointer" },
+  correzioneBox: { display: "flex", gap: 8, marginTop: 4, marginBottom: 16 },
+  inputCorrezione: { flex: 1, padding: "10px 12px", borderRadius: 8, border: "1px solid #DAD6C8", fontSize: 14, fontFamily: "inherit" },
+  bottoneCorrezione: { background: "#fff", color: "#B23B2E", border: "1px solid #E3B8B0", padding: "10px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" },
   attesaBox: { textAlign: "center", background: "#FFF8E6", border: "1px solid #F5D97A", borderRadius: 10, padding: "20px 16px", marginBottom: 16 },
   attesaNome: { fontSize: 16, fontWeight: 700, color: "#1F2318" },
   attesaCountdown: { fontSize: 13, color: "#6B4E00", marginTop: 4, fontVariantNumeric: "tabular-nums" },
