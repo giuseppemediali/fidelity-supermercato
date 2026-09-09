@@ -58,7 +58,7 @@ async function supaFetch(path, options = {}) {
 const PUNTI_PER_EURO = 1; // 1 punto ogni euro speso — personalizzabile
 const SOGLIA_SCONTO = 1000; // punti necessari per lo sconto
 const VALORE_SCONTO = 10; // € di sconto alla soglia
-const ATTESA_SECONDI = 15 * 60; // timeout attesa scontrino: 15 minuti (deve corrispondere al listener)
+const ATTESA_SECONDI = 5 * 60; // timeout attesa scontrino: 5 minuti (deve corrispondere al listener)
 
 // ---------------------------------------------------------------------------
 // Generatore QR autonomo (nessuna dipendenza esterna/CDN — sempre affidabile)
@@ -321,16 +321,14 @@ export default function FidelityApp() {
   const [scannerAttivo, setScannerAttivo] = useState(false);
   const [erroreScanner, setErroreScanner] = useState(null);
   const [inputManuale, setInputManuale] = useState(false);
-  const [modalitaCassa, setModalitaCassa] = useState("automatica"); // manuale | automatica — apre già con lo scan attivo
+  const [modalitaCassa, setModalitaCassa] = useState("locale"); // manuale | locale — apre già con lo scan attivo
   const [clienteInAttesa, setClienteInAttesa] = useState(null);
   const [secondiRimasti, setSecondiRimasti] = useState(0);
   const [logListener, setLogListener] = useState([]);
   const [ricercaCliente, setRicercaCliente] = useState("");
   const [messaggioEmail, setMessaggioEmail] = useState(null);
-  const [modalitaLocale, setModalitaLocale] = useState(false);
   const [puntiDaTogliere, setPuntiDaTogliere] = useState("");
 
-  const attesaIdRef = useRef(null);
   const countdownRef = useRef(null);
   const pollingScontriniRef = useRef(null);
 
@@ -461,10 +459,6 @@ export default function FidelityApp() {
   }, []);
 
   useEffect(() => {
-    setModalitaLocale(storageLeggi("fidelity_modalita_locale") === "1");
-  }, []);
-
-  useEffect(() => {
     return () => {
       clearInterval(countdownRef.current);
       clearInterval(pollingScontriniRef.current);
@@ -592,9 +586,9 @@ export default function FidelityApp() {
   // del browser.
 
   function fermaAttesaLocale() {
-    // Ferma solo i timer/polling locali (nel senso di "lato browser"), senza
-    // toccare l'attesa sul server: usato quando si lascia semplicemente la
-    // schermata, non quando si vuole davvero annullare l'attesa in corso.
+    // Ferma solo i timer/polling lato browser, senza toccare l'attesa sul
+    // programma locale: usato quando si lascia semplicemente la schermata,
+    // non quando si vuole davvero annullare l'attesa in corso.
     clearInterval(countdownRef.current);
     clearInterval(pollingScontriniRef.current);
     setClienteInAttesa(null);
@@ -602,25 +596,10 @@ export default function FidelityApp() {
   }
 
   function annullaAttesa() {
-    if (modalitaLocale) {
-      fermaAttesaLocale();
-      localeFetch("/annulla", { method: "POST" }).catch(() => {});
-      return;
-    }
-    const idDaAnnullare = attesaIdRef.current;
     fermaAttesaLocale();
-    attesaIdRef.current = null;
-    storageRimuovi("fidelity_attesa_id");
-    if (idDaAnnullare) {
-      supaFetch(`attese_cassa?id=eq.${idDaAnnullare}`, {
-        method: "PATCH",
-        body: JSON.stringify({ attiva: false, esito: "annullata" }),
-        prefer: "return=minimal",
-      }).catch(() => {});
-    }
+    localeFetch("/annulla", { method: "POST" }).catch(() => {});
   }
 
-  // Esito comune (locale o remoto): aggiorna punti in UI e log del cliente.
   function gestisciEsitoAttesa(attesa, cliente) {
     if (attesa.esito === "abbinato") {
       const importo = Number(attesa.importo_abbinato) || 0;
@@ -643,8 +622,8 @@ export default function FidelityApp() {
       setSecondiRimasti((s) => (s > 0 ? s - 1 : 0));
     }, 1000);
 
-    // Il server locale gira sullo stesso PC (localhost): possiamo permetterci
-    // un polling molto piu' frequente, e' comunque a costo zero di rete.
+    // Il programma locale gira sullo stesso PC (localhost): possiamo
+    // permetterci un polling molto frequente, e' a costo zero di rete.
     pollingScontriniRef.current = setInterval(async () => {
       try {
         const dati = await localeFetch("/stato");
@@ -655,39 +634,10 @@ export default function FidelityApp() {
         clearInterval(countdownRef.current);
         gestisciEsitoAttesa(attesa, cliente);
       } catch (err) {
-        // Server locale momentaneamente non raggiungibile: riproviamo al
+        // Programma locale momentaneamente non raggiungibile: riproviamo al
         // prossimo giro, senza interrompere l'attesa.
       }
     }, 400);
-  }
-
-  function avviaPollingAttesa(attesaId, cliente, secondiIniziali = ATTESA_SECONDI) {
-    attesaIdRef.current = attesaId;
-    setClienteInAttesa(cliente);
-    setSecondiRimasti(secondiIniziali);
-
-    countdownRef.current = setInterval(() => {
-      setSecondiRimasti((s) => (s > 0 ? s - 1 : 0));
-    }, 1000);
-
-    // Controlla se il listener sul PC di cassa ha gia' abbinato (o fatto
-    // scadere) questa attesa.
-    pollingScontriniRef.current = setInterval(async () => {
-      try {
-        const righe = await supaFetch(`attese_cassa?id=eq.${attesaId}&select=*`);
-        const attesa = righe && righe[0];
-        if (!attesa || attesa.attiva) return; // ancora in corso
-
-        clearInterval(pollingScontriniRef.current);
-        clearInterval(countdownRef.current);
-        attesaIdRef.current = null;
-        storageRimuovi("fidelity_attesa_id");
-        gestisciEsitoAttesa(attesa, cliente);
-      } catch (err) {
-        // Errore di rete/connessione: non blocchiamo l'attesa, riproviamo
-        // al prossimo giro.
-      }
-    }, 700);
   }
 
   async function avviaAttesa(codice) {
@@ -699,85 +649,41 @@ export default function FidelityApp() {
     fermaAttesaLocale();
     setLogListener((prev) => [{ tipo: "attesa", testo: `In attesa scontrino per ${cliente.nome}`, ora: nowLabel() }, ...prev].slice(0, 8));
 
-    if (modalitaLocale) {
-      try {
-        await localeFetch("/attesa", {
-          method: "POST",
-          body: JSON.stringify({ cliente_id: cliente.id, cliente_nome: cliente.nome }),
-        });
-        avviaPollingAttesaLocale(cliente);
-      } catch (err) {
-        setMessaggioCassa({ tipo: "errore", testo: `Programma cassa locale non raggiungibile: ${err.message}` });
-      }
-      return;
-    }
-
     try {
-      const righe = await supaFetch("attese_cassa", {
+      await localeFetch("/attesa", {
         method: "POST",
         body: JSON.stringify({ cliente_id: cliente.id, cliente_nome: cliente.nome }),
       });
-      const attesa = righe && righe[0];
-      if (!attesa) throw new Error("creazione dell'attesa non riuscita");
-      storageScrivi("fidelity_attesa_id", String(attesa.id));
-      avviaPollingAttesa(attesa.id, cliente);
+      avviaPollingAttesaLocale(cliente);
     } catch (err) {
-      setMessaggioCassa({ tipo: "errore", testo: `Impossibile avviare l'attesa: ${err.message}` });
+      setMessaggioCassa({ tipo: "errore", testo: `Programma cassa (sul PC) non raggiungibile: ${err.message}` });
     }
   }
 
   // Ripristina un'attesa lasciata in corso (es. dopo un refresh della
-  // pagina, o tornando sulla schermata cassa dopo essere passati altrove),
-  // cosi' l'operatore non perde di vista un cliente ancora in attesa. In
-  // modalita' locale lo stato vive nel programma sul PC (sopravvive anche a
-  // un ricaricamento totale del browser); altrimenti vive su Supabase.
+  // pagina, o tornando sulla schermata cassa dopo essere passati altrove):
+  // lo stato vive nel programma sul PC, non nel browser, quindi sopravvive
+  // anche a un ricaricamento totale della pagina.
   useEffect(() => {
-    if (vista !== "cassa" || modalitaCassa !== "automatica") return;
+    if (vista !== "cassa" || modalitaCassa !== "locale") return;
     if (clienteInAttesa) return;
 
-    if (modalitaLocale) {
-      let attivo = true;
-      localeFetch("/stato")
-        .then((dati) => {
-          if (!attivo) return;
-          const attesa = dati && dati.attesa;
-          if (!attesa || !attesa.attiva) return;
-          const trascorsi = Math.floor((Date.now() - new Date(attesa.iniziata_il).getTime()) / 1000);
-          const rimasti = Math.max(0, ATTESA_SECONDI - trascorsi);
-          const cliente = clienti.find((c) => c.id === attesa.cliente_id) || { id: attesa.cliente_id, nome: attesa.cliente_nome, punti: 0 };
-          avviaPollingAttesaLocale(cliente, rimasti);
-        })
-        .catch(() => {});
-      return () => {
-        attivo = false;
-      };
-    }
-
-    if (caricamentoClienti || attesaIdRef.current) return;
-    const idSalvato = storageLeggi("fidelity_attesa_id");
-    if (!idSalvato) return;
-
     let attivo = true;
-    supaFetch(`attese_cassa?id=eq.${idSalvato}&select=*`)
-      .then((righe) => {
+    localeFetch("/stato")
+      .then((dati) => {
         if (!attivo) return;
-        const attesa = righe && righe[0];
-        if (!attesa || !attesa.attiva) {
-          storageRimuovi("fidelity_attesa_id");
-          return;
-        }
-        const iniziata = new Date(attesa.iniziata_il).getTime();
-        const trascorsi = Math.floor((Date.now() - iniziata) / 1000);
+        const attesa = dati && dati.attesa;
+        if (!attesa || !attesa.attiva) return;
+        const trascorsi = Math.floor((Date.now() - new Date(attesa.iniziata_il).getTime()) / 1000);
         const rimasti = Math.max(0, ATTESA_SECONDI - trascorsi);
         const cliente = clienti.find((c) => c.id === attesa.cliente_id) || { id: attesa.cliente_id, nome: attesa.cliente_nome, punti: 0 };
-        avviaPollingAttesa(attesa.id, cliente, rimasti);
+        avviaPollingAttesaLocale(cliente, rimasti);
       })
       .catch(() => {});
     return () => {
       attivo = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vista, modalitaCassa, modalitaLocale, caricamentoClienti, clienti]);
+  }, [vista, modalitaCassa, clienti]);
 
   function togliPunti(cliente) {
     const punti = parseInt(puntiDaTogliere, 10);
@@ -934,7 +840,7 @@ export default function FidelityApp() {
                   type="button"
                   style={styles.bottoneUsaCassa}
                   onClick={() => {
-                    setModalitaCassa("automatica");
+                    setModalitaCassa("locale");
                     fermaScanner();
                     setInputManuale(false);
                     setCodiceCassa("");
@@ -1018,10 +924,10 @@ export default function FidelityApp() {
               </button>
               <button
                 type="button"
-                style={{ ...styles.toggleBtn, ...(modalitaCassa === "automatica" ? styles.toggleBtnAttivo : {}) }}
-                onClick={() => { setModalitaCassa("automatica"); fermaScanner(); setInputManuale(false); setCodiceCassa(""); }}
+                style={{ ...styles.toggleBtn, ...(modalitaCassa === "locale" ? styles.toggleBtnAttivo : {}) }}
+                onClick={() => { setModalitaCassa("locale"); fermaScanner(); setInputManuale(false); setCodiceCassa(""); }}
               >
-                Automatica (rete)
+                Locale
               </button>
             </div>
 
@@ -1097,27 +1003,13 @@ export default function FidelityApp() {
               </>
             )}
 
-            {modalitaCassa === "automatica" && (
+            {modalitaCassa === "locale" && (
               <div>
                 <p style={styles.hint}>
-                  Scansiona la tessera del cliente prima di battere la spesa. Il sistema resta in attesa
-                  del primo scontrino valido dalla stampante non fiscale (le comande vengono ignorate) per
-                  al massimo {Math.floor(ATTESA_SECONDI / 60)} minuti.
+                  Scansiona la tessera del cliente prima di battere la spesa. Il sistema (in esecuzione su
+                  questo PC) resta in attesa del primo scontrino valido dalla stampante non fiscale (le
+                  comande vengono ignorate) per al massimo {Math.floor(ATTESA_SECONDI / 60)} minuti.
                 </p>
-
-                <label style={styles.toggleLocaleLabel}>
-                  <input
-                    type="checkbox"
-                    checked={modalitaLocale}
-                    onChange={(e) => {
-                      const attiva = e.target.checked;
-                      fermaAttesaLocale();
-                      setModalitaLocale(attiva);
-                      storageScrivi("fidelity_modalita_locale", attiva ? "1" : "0");
-                    }}
-                  />
-                  Cassa in modalità locale (usa il programma su questo PC — più veloce e affidabile)
-                </label>
 
                 {!clienteInAttesa && (
                   <form
