@@ -40,7 +40,7 @@ async function supaFetch(path, options = {}) {
 const PUNTI_PER_EURO = 1; // 1 punto ogni euro speso — personalizzabile
 const SOGLIA_SCONTO = 1000; // punti necessari per lo sconto
 const VALORE_SCONTO = 10; // € di sconto alla soglia
-const ATTESA_SECONDI = 5 * 60; // timeout attesa scontrino: 5 minuti
+const ATTESA_SECONDI = 15 * 60; // timeout attesa scontrino: 15 minuti (deve corrispondere al listener)
 
 // ---------------------------------------------------------------------------
 // Generatore QR autonomo (nessuna dipendenza esterna/CDN — sempre affidabile)
