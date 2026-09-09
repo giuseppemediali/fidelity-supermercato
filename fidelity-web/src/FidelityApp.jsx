@@ -627,7 +627,7 @@ export default function FidelityApp() {
         // Errore di rete/connessione: non blocchiamo l'attesa, riproviamo
         // al prossimo giro.
       }
-    }, 2000);
+    }, 700);
   }
 
   async function avviaAttesa(codice) {
